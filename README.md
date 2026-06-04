@@ -64,10 +64,21 @@ Copy the `Get-TeamsPrivateChannelComplianceMap` folder (containing the `1.0` sub
 C:\Users\<you>\Documents\PowerShell\Modules\Get-TeamsPrivateChannelComplianceMap\1.0\
 ```
 
-**If you downloaded a ZIP from GitHub**, Windows marks the extracted files as coming from the internet. You must unblock them before importing, otherwise PowerShell will refuse to load the module under a `RemoteSigned` execution policy:
+**If you downloaded a ZIP from GitHub**, Windows marks the extracted files as coming from the internet. You must unblock them before importing, otherwise PowerShell will refuse to load the module under a `RemoteSigned` execution policy with an error similar to:
+
+```text
+Import-Module: File ...\Get-TeamsPrivateChannelComplianceMap.psm1 cannot be loaded.
+The file is not digitally signed. You cannot run this script on the current system.
+```
+
+Run `Unblock-File` against the extracted folder, then import. Replace the path with wherever you extracted the ZIP:
 
 ```powershell
-Get-ChildItem 'C:\path\to\Get-TeamsPrivateChannelComplianceMap-main' -Recurse | Unblock-File
+# Step 1 — remove the internet-origin mark from all extracted files
+Get-ChildItem 'C:\temp\teams2\Get-TeamsPrivateChannelComplianceMap-main' -Recurse | Unblock-File
+
+# Step 2 — import the module
+Import-Module 'C:\temp\teams2\Get-TeamsPrivateChannelComplianceMap-main\1.0\Get-TeamsPrivateChannelComplianceMap.psd1'
 ```
 
 Then import it by name:
