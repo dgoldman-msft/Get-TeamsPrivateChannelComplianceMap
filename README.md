@@ -64,6 +64,12 @@ Copy the `Get-TeamsPrivateChannelComplianceMap` folder (containing the `1.0` sub
 C:\Users\<you>\Documents\PowerShell\Modules\Get-TeamsPrivateChannelComplianceMap\1.0\
 ```
 
+**If you downloaded a ZIP from GitHub**, Windows marks the extracted files as coming from the internet. You must unblock them before importing, otherwise PowerShell will refuse to load the module under a `RemoteSigned` execution policy:
+
+```powershell
+Get-ChildItem 'C:\path\to\Get-TeamsPrivateChannelComplianceMap-main' -Recurse | Unblock-File
+```
+
 Then import it by name:
 
 ```powershell
@@ -76,6 +82,8 @@ Or import directly from a cloned repository:
 git clone https://github.com/dgoldman-msft/Get-TeamsPrivateChannelComplianceMap.git
 Import-Module .\Get-TeamsPrivateChannelComplianceMap\1.0\Get-TeamsPrivateChannelComplianceMap.psd1
 ```
+
+> **Note:** Files cloned via `git` do not carry the internet-origin mark and do not require `Unblock-File`.
 
 The function is also available via the alias `GTPCCM` once the module is imported.
 
