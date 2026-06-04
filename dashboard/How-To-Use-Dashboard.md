@@ -72,10 +72,12 @@ For Interactive and Device Code, entering a **Tenant ID or domain** (e.g. `conto
 | Switch | Default | Description |
 | --- | --- | --- |
 | **-HoldSummary** | On | Generates the per-custodian Purview eDiscovery hold location checklist |
+| **-ResolveSharePointUrls** | Off | Query Microsoft Graph (`Sites.Read.All`) for authoritative parent team SharePoint URLs. Falls back to constructed URL if the Graph call fails. Not supported with PSCredential auth. |
 | **-MediumDetails** | Off | Adds a 6-column compliance table to the Raw Log output |
 | **-FullDetails** | Off | Adds a full property list to the Raw Log output |
-| **-ExportToCsv** | On | Exports all records to a CSV file — **required for the Records Table and Gap Analysis tabs** |
-| **-StayConnected** | Off | Keeps the Teams session open after the scan — useful when running multiple scans back to back |
+| **-StayConnected** | Off | Keeps the Teams session open after the scan (the dashboard manages this automatically via the persistent process — this switch controls whether the module itself disconnects) |
+
+> **Note:** `-ExportToCsv` is always enabled by the dashboard and does not appear as a checkbox. The CSV is required for the Records Table, Gap Analysis, and Hold Summary tabs.
 
 ---
 
@@ -128,6 +130,7 @@ Appears immediately below the run button after every scan. This is the primary v
 | 🟡 | Verify migration status before finalising the hold |
 | 🟢 | Add group mailbox and SharePoint locations to the hold |
 | ℹ️ | No private channels found — standard hold applies |
+| ⚫ | No Teams data returned — check the Raw Log tab for details |
 
 ---
 
@@ -140,8 +143,6 @@ Visual breakdown of MC1134737 status across all scanned custodians.
 - **Per-custodian bar chart** — stacked bar showing the status breakdown per UPN
 - **Critical gap detail table** — if any ownerless channels exist, they are listed with their Team name, Channel name, ChannelThreadId, and GroupId for use in remediation
 
-> Requires **-ExportToCsv** to be enabled.
-
 ---
 
 ### Tab: 📊 Records Table
@@ -149,10 +150,8 @@ Visual breakdown of MC1134737 status across all scanned custodians.
 Full filterable table of every record collected during the scan.
 
 - Filter by **UPN**, **MC1134737_Status**, and/or **Team name** using the dropdowns
-- The table shows: UPN, Team, Channel, Status, Membership Type, User Role, Group Mailbox, SharePoint URL, and Compliance Target
+- The table shows: UPN, Team, Channel, Status, Membership Type, User Role, Group Mailbox, SharePoint URL, `ParentTeamSharePointUrl`, and Compliance Target
 - Use **⬇️ Download filtered CSV** to export the current filtered view for legal review
-
-> Requires **-ExportToCsv** to be enabled.
 
 ---
 
@@ -170,15 +169,26 @@ Purview eDiscovery hold location checklist, generated when **-HoldSummary** is e
 | Critical — ownerless channels | Listed per channel with remediation step |
 | Private channel Exchange locations | Group mailboxes, deduplicated per team — add as **non-custodial data sources** |
 | Private channel SharePoint locations | One URL per channel, labelled by status — add as **non-custodial data sources** |
-| Add manually — parent team SharePoint | Team names only — look up the SharePoint URL in the Teams admin center |
+| Standard/Shared channel Exchange locations | Group mailbox for every team with standard or shared channels, deduplicated per team — add as **non-custodial data sources**. Captures all standard and shared channel messages via the `TeamsMessagesData` substrate folder. |
+| Parent team SharePoint | URL constructed from group mailbox `MailNickName` (`[Constructed]`), or Graph-resolved (`[Graph-resolved]`) when `-ResolveSharePointUrls` is enabled. See [Microsoft eDiscovery docs](https://learn.microsoft.com/en-us/purview/ediscovery-teams-investigation#identifying-the-sharepoint-site-for-private-and-shared-channels). Add as **non-custodial data source**. Verify `[Constructed]` URLs if the site was manually renamed after team creation. |
 
 ---
 
 ### Tab: 🖥️ Raw Log
 
-Full PowerShell console output from the scan. Useful for administrators troubleshooting errors or reviewing detailed activity.
+Timestamped log file written by the PowerShell module during the scan (`Logging_YYYYMMDD_HHmmss.txt`). Expanded by default when you open the tab.
 
-The output is wrapped in a collapsible expander (expanded by default when you open the tab). Click the header to collapse it.
+- Use **⬇️ Download log file** to save the log for audit or support purposes.
+
+---
+
+### Tab: 🚨 Error Log
+
+All error and warning lines captured from the PowerShell output during the scan.
+
+- A count of errors/warnings is shown at the top.
+- ✅ Green message if no errors were detected.
+- Use **⬇️ Download error log** to save as `error_log.txt`.
 
 ---
 
@@ -188,18 +198,21 @@ The output is wrapped in a collapsible expander (expanded by default when you op
 | --- | --- | --- |
 | `pwsh not found` error | PowerShell 7.1+ is not installed or not on PATH | Install from [aka.ms/powershell](https://aka.ms/powershell) |
 | `Module manifest not found` in sidebar | Path to `.psd1` is wrong | Update the path in the sidebar |
-| No data in Records Table or Gap Analysis | `-ExportToCsv` is disabled | Enable **-ExportToCsv** in the sidebar |
+| No data in Records Table or Gap Analysis | CSV not written | Check the Error Log tab; ensure the module path is correct |
+| UPN appears in Compliance Summary with ⚫ | UPN returned no Teams data | Check Raw Log tab — the user may not belong to any Teams or `Get-Team` returned nothing |
 | Authentication browser window does not open | Browser blocked pop-up | Allow pop-ups for `localhost`, or switch to Device Code flow |
-| Device Code — where to enter the code | Code is in the live output expander | Expand **Live PowerShell output** during the run; go to `microsoft.com/devicelogin` |
+| Device Code — where to enter the code | Code is in the Raw Log tab | Open **Raw Log** during the run and go to `microsoft.com/devicelogin` |
 | Scan completes but Hold Summary tab is empty | `-HoldSummary` is disabled | Enable **-HoldSummary** in the sidebar |
+| Session shows ⚫ after a scan | Teams session was not retained | Check Error Log; use the **Disconnect Teams** then re-scan to force a fresh connection |
 | `Import-Module: file is not digitally signed` | Module downloaded as ZIP without unblocking | Run `Get-ChildItem <extracted-folder> -Recurse \| Unblock-File` then restart the dashboard |
 
 ---
 
 ## Tips for Security Analysts
 
-- **Start with the Compliance Summary** — the action table tells you everything you need to know at a glance. 🔴 rows require immediate action before the hold is complete.
-- **OwnerlessPending channels are the highest priority** — compliance copies for these channels are distributed across all current member mailboxes. You must add every member's mailbox to the hold, not just the custodian's.
+- **Start with the Compliance Summary** — the action table shows every submitted UPN. 🔴 rows require immediate action. ⚫ rows had no Teams data — check the Raw Log tab.
+- **OwnerlessPending channels are the highest priority** — compliance copies for these channels are distributed across all current member mailboxes. You must add every member’s mailbox to the hold, not just the custodian’s.
 - **Use Gap Analysis to brief stakeholders** — the pie and bar charts are suitable for including in a compliance review presentation.
 - **Use the Hold Summary tab when creating the Purview case** — work through each custodian card top to bottom and add each listed location to the case before marking it complete.
 - **Export from Records Table for audit trail** — the filtered CSV download provides a timestamped record of what was found for a specific custodian or channel.
+- **Session reuse** — the dashboard keeps a persistent PowerShell process alive. Once authenticated, subsequent scans skip the sign-in prompt. Use the **Session** panel in the sidebar to disconnect or kill the session when done.

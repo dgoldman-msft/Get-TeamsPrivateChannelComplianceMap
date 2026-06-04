@@ -26,6 +26,7 @@ Get-TeamsPrivateChannelComplianceMap
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
+    [-ResolveSharePointUrls]
     [<CommonParameters>]
 ```
 
@@ -60,6 +61,7 @@ Get-TeamsPrivateChannelComplianceMap
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
+    [-ResolveSharePointUrls]
     [<CommonParameters>]
 ```
 
@@ -76,6 +78,7 @@ Get-TeamsPrivateChannelComplianceMap
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
+    [-ResolveSharePointUrls]
     [<CommonParameters>]
 ```
 
@@ -91,6 +94,7 @@ Get-TeamsPrivateChannelComplianceMap
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
+    [-ResolveSharePointUrls]
     [<CommonParameters>]
 ```
 
@@ -147,7 +151,8 @@ Running with `-HoldSummary` produces a per-custodian checklist organized into fi
 | **Critical — ownerless channels** | Add all current member mailboxes; assign owner to unblock migration |
 | **Private channel Exchange locations** — group mailboxes, deduplicated per team | Add as **non-custodial data sources** |
 | **Private channel SharePoint locations** — one URL per channel, labelled by status | Add as **non-custodial data sources** |
-| **Add manually — parent team SharePoint** | Resolve in Teams admin center; add as **non-custodial data source** |
+| **Standard/Shared channel Exchange locations** — group mailboxes, deduplicated per team | Add as **non-custodial data sources** |
+| **Parent team SharePoint** — `[Constructed]` from MailNickName, or `[Graph-resolved]` with `-ResolveSharePointUrls` | Add as **non-custodial data sources** |
 
 ### Display modes
 
@@ -157,6 +162,7 @@ Running with `-HoldSummary` produces a per-custodian checklist organized into fi
 | `-MediumDetails` | Adds a consolidated six-column table after the summaries |
 | `-FullDetails` | Adds a full `Format-List` of every property after the summaries |
 | `-HoldSummary` | Adds a per-custodian Purview hold location checklist after the summaries |
+| `-HoldSummary -ResolveSharePointUrls` | As above; parent team SharePoint URLs are Graph-resolved (`[Graph-resolved]`) rather than constructed (`[Constructed]`) |
 
 ## PARAMETERS
 
@@ -274,6 +280,16 @@ When specified, the Microsoft Teams session is NOT disconnected after the functi
 | Type | `Switch` |
 | Required | No |
 
+### -ResolveSharePointUrls
+
+When specified together with `-HoldSummary`, queries the Microsoft Graph API (`GET /groups/{id}/sites/root`) to obtain authoritative parent team SharePoint site URLs. The URL is resolved **once per unique team** during the main scan (`process` block), cached by `GroupId`, and stored in the `ParentTeamSharePointUrl` field on every record for that team. This means the resolved URL appears in the CSV export, the dashboard Hold Summary tab, and the console hold summary — not just in the log text. The `Microsoft.Graph.Authentication` module is installed automatically if absent. Requires the `Sites.Read.All` permission granted to the authenticating identity. Falls back to the constructed URL for any team where the Graph call fails, with a warning in the log. Not supported with `PSCredential` authentication.
+
+| Attribute | Value |
+| --- | --- |
+| Type | `Switch` |
+| Required | No |
+| Requires | `-HoldSummary`; `Sites.Read.All` permission |
+
 ### -ExportToCsv
 
 When specified, all collected records are exported to a timestamped CSV file in `-LoggingDirectory` named `ComplianceMap_yyyyMMdd_HHmmss.csv`.
@@ -309,7 +325,8 @@ When specified, prints a per-custodian **Purview eDiscovery Hold Summary** after
 - **CRITICAL** — any `OwnerlessPending` channels still on the old model, whose compliance copies remain in individual member mailboxes.
 - **PRIVATE CHANNEL — EXCHANGE** — parent team group mailboxes for all migrated/pending private channels, deduplicated per team (add as non-custodial data sources).
 - **PRIVATE CHANNEL — SHAREPOINT** — dedicated SharePoint site URL for each private channel, labelled by status.
-- **ADD MANUALLY** — a list of teams for which the parent team SharePoint site (standard channel file storage) must be looked up manually in the Teams admin center.
+- **STANDARD/SHARED CHANNEL — EXCHANGE** — the group mailbox for every team the custodian belongs to that has standard or shared channels, deduplicated per team. These mailboxes hold all standard and shared channel messages via the `TeamsMessagesData` substrate folder and must be added as non-custodial Exchange data sources.
+- **PARENT TEAM SHAREPOINT** — the parent team SharePoint URL, constructed from the group mailbox `MailNickName` following the documented naming convention (`https://<tenant>.sharepoint.com/sites/<MailNickName>`). Labelled `[Constructed]` — verify if the site was manually renamed after team creation. Ref: [Identifying the SharePoint site for private and shared channels](https://learn.microsoft.com/en-us/purview/ediscovery-teams-investigation#identifying-the-sharepoint-site-for-private-and-shared-channels).
 
 OneDrive URLs are constructed from the UPN and may need verification for tenants that use custom SharePoint domain names.
 
@@ -442,11 +459,12 @@ After the MC1134737 gap report, prints a consolidated hold location checklist fo
 2. **CRITICAL — OWNERLESS CHANNELS** — channels still on the old model; listed per channel with remediation step.
 3. **PRIVATE CHANNEL — EXCHANGE LOCATIONS** — deduplicated group mailboxes for migrated/pending channels (non-custodial data sources).
 4. **PRIVATE CHANNEL — SHAREPOINT LOCATIONS** — one SharePoint URL per private channel, labelled by `MC1134737_Status`.
-5. **ADD MANUALLY** — team names whose parent SharePoint site (standard channel files) must be resolved in the Teams admin center.
+5. **STANDARD/SHARED CHANNEL — EXCHANGE LOCATIONS** — deduplicated group mailboxes for every team the custodian belongs to with standard or shared channels. These mailboxes hold all standard and shared channel messages via the `TeamsMessagesData` substrate folder (non-custodial data sources).
+6. **PARENT TEAM SHAREPOINT** — parent team SharePoint URL constructed from `MailNickName`, labelled `[Constructed]`. Verify if the site was manually renamed. Add `-ResolveSharePointUrls` for Graph-resolved `[Graph-resolved]` URLs.
 
 ## OUTPUTS
 
-**None (display only).** Console output is controlled by `-MediumDetails` and `-FullDetails`. Use `-ExportToCsv` to capture all records to a CSV file.
+**None (display only).** Console output is controlled by `-MediumDetails`, `-FullDetails`, and `-HoldSummary`. Use `-ExportToCsv` to capture all records to a CSV file.
 
 Internally the function builds a collection of `PSCustomObject` records tagged with the TypeName `TeamsPrivateChannelComplianceMap.Record`. Each record contains the following fields:
 
@@ -461,6 +479,7 @@ Internally the function builds a collection of `PSCustomObject` records tagged w
 | `MembershipType` | String | `Standard`, `Private`, or `Shared` |
 | `IsPrivateChannel` | Boolean | `$true` for private channels |
 | `SharePointSiteUrl` | String | Dedicated SharePoint site URL (private channels only) |
+| `ParentTeamSharePointUrl` | String | Parent team SharePoint URL — `[Graph-resolved]` when `-ResolveSharePointUrls` is used and Graph succeeds; otherwise `[Constructed]` from `GroupMailbox` MailNickName. Included in the CSV export. |
 | `UserRole` | String | `Owner` or `Member` |
 | `MC1134737_Status` | String | See MC1134737_Status values below |
 | `ComplianceTarget` | String | Plain-English eDiscovery data source |
@@ -487,7 +506,8 @@ Internally the function builds a collection of `PSCustomObject` records tagged w
 - Each invocation creates a separate timestamped log file in `-LoggingDirectory`.
 - Session reuse: when `-StayConnected` is specified and `Get-CsTenant` succeeds, `Connect-MicrosoftTeams` is skipped entirely.
 - `-MediumDetails` and `-FullDetails` are mutually exclusive; `-FullDetails` takes precedence if both are supplied.
-- `-HoldSummary` can be combined with any other switch (`-MediumDetails`, `-FullDetails`, `-ExportToCsv`, `-StayConnected`).
+- `-HoldSummary` can be combined with any other switch (`-MediumDetails`, `-FullDetails`, `-ExportToCsv`, `-StayConnected`, `-ResolveSharePointUrls`).
+- `-ResolveSharePointUrls` requires `-HoldSummary` and `Sites.Read.All` permission. Not supported with `PSCredential` auth. Falls back to constructed URL per team on Graph call failure.
 
 ### eDiscovery hold coverage
 
@@ -497,7 +517,8 @@ This function maps the content locations for the custodian's **private channel c
 | --- | --- | --- |
 | Custodian's Exchange mailbox | 1:1 chats, group chats, standard and shared channel messages, pre-migration private channel messages | Add the custodian UPN as an Exchange custodian data source in the Purview case |
 | Custodian's OneDrive | Files shared in chats and meetings | Add the custodian UPN as a OneDrive custodian data source in the Purview case |
-| Parent team's SharePoint site | Standard channel file storage (separate from the private channel `SharePointSiteUrl`) | Look up the team's SharePoint URL in the Teams admin center or via `Get-Team` |
+| Standard/Shared channel group mailbox | All standard and shared channel messages (TeamsMessagesData substrate) | Surfaced by `-HoldSummary` as **STANDARD/SHARED CHANNEL — EXCHANGE LOCATIONS** |
+| Parent team SharePoint site | Standard channel file storage | Surfaced by `-HoldSummary` as **PARENT TEAM SHAREPOINT** — constructed URL or Graph-resolved with `-ResolveSharePointUrls` |
 
 **OwnerlessPending channels:** When `MC1134737_Status = OwnerlessPending`, migration was skipped because no channel owner is assigned. Messages remain in individual member mailboxes. This function identifies the custodian's channel but does **not** enumerate all other members. For complete hold coverage, add the mailboxes of every current channel member and assign an owner via `Add-TeamChannelUser -User <upn> -Role Owner` to unblock migration.
 

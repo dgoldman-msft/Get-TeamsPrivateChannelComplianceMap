@@ -17,7 +17,8 @@ This module closes that gap. Given one or more custodian UPNs, it:
 5. Resolves the parent team's Exchange group mailbox address and the dedicated SharePoint site URL for each private channel.
 6. Assigns each channel an **MC1134737_Status** and a plain-English **ComplianceTarget** telling legal exactly which data sources to add to the Purview case.
 7. Prints a color-coded **MC1134737 Compliance Gap Report** per custodian, with a consolidated summary across all UPNs in the run.
-8. Optionally generates a **Purview eDiscovery Hold Summary** (`-HoldSummary`) — a complete, ready-to-action checklist of every location that must be added to the custodian hold, including locations that fall outside the MC1134737 scope.
+8. Optionally generates a **Purview eDiscovery Hold Summary** (`-HoldSummary`) — a complete, ready-to-action checklist of every location to add to the custodian hold, including standard channel group mailboxes, constructed (or Graph-resolved) parent team SharePoint URLs, and always-required custodian locations.
+   Add `-ResolveSharePointUrls` to resolve parent team SharePoint URLs authoritatively via Microsoft Graph instead of constructing them from the group mailbox MailNickName.
 
 ## Locations this tool does not resolve automatically
 
@@ -45,7 +46,8 @@ Running with `-HoldSummary` produces a per-custodian checklist organized into fi
 | **Critical — ownerless channels** | Add all current member mailboxes; assign owner to unblock migration |
 | **Private channel Exchange locations** — group mailboxes, deduplicated per team | Add as **non-custodial data sources** |
 | **Private channel SharePoint locations** — one URL per channel, labelled by status | Add as **non-custodial data sources** |
-| **Add manually — parent team SharePoint** | Resolve in Teams admin center; add as **non-custodial data source** |
+| **Standard/Shared channel Exchange locations** — group mailboxes, deduplicated per team | Add as **non-custodial data sources** |
+| **Parent team SharePoint** — `[Constructed]` from MailNickName, or `[Graph-resolved]` with `-ResolveSharePointUrls` | Add as **non-custodial data sources** |
 
 ## Requirements
 
@@ -111,6 +113,7 @@ Get-TeamsPrivateChannelComplianceMap
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
+    [-ResolveSharePointUrls]
     [<CommonParameters>]
 
 Get-TeamsPrivateChannelComplianceMap
@@ -137,6 +140,7 @@ Get-TeamsPrivateChannelComplianceMap
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
+    [-ResolveSharePointUrls]
     [<CommonParameters>]
 
 Get-TeamsPrivateChannelComplianceMap
@@ -149,6 +153,7 @@ Get-TeamsPrivateChannelComplianceMap
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
+    [-ResolveSharePointUrls]
     [<CommonParameters>]
 
 Get-TeamsPrivateChannelComplianceMap
@@ -160,6 +165,7 @@ Get-TeamsPrivateChannelComplianceMap
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
+    [-ResolveSharePointUrls]
     [<CommonParameters>]
 ```
 
@@ -181,7 +187,8 @@ Get-TeamsPrivateChannelComplianceMap
 | `-ExportToCsv` | Switch | No | `$false` | Export all collected records to a timestamped CSV file in `-LoggingDirectory`. |
 | `-MediumDetails` | Switch | No | `$false` | After the per-user gap reports, print a consolidated six-column table for all UPNs. |
 | `-FullDetails` | Switch | No | `$false` | After the per-user gap reports, print all properties as `Format-List` for all UPNs. |
-| `-HoldSummary` | Switch | No | `$false` | After the gap reports, print a per-custodian Purview eDiscovery hold location checklist (Exchange mailbox, OneDrive, private channel group mailboxes and SharePoint sites, ownerless channel warnings, and a manual-action note for parent team SharePoint). |
+| `-HoldSummary` | Switch | No | `$false` | After the gap reports, print a per-custodian Purview eDiscovery hold location checklist. |
+| `-ResolveSharePointUrls` | Switch | No | `$false` | When used with `-HoldSummary`, queries Microsoft Graph (`GET /groups/{id}/sites/root`) for authoritative parent team SharePoint URLs. Resolved once per team in the scan loop and stored in `ParentTeamSharePointUrl` on every record — so the CSV export and dashboard both show the resolved URL. Requires `Sites.Read.All`. Falls back to constructed URL on failure. Not supported with PSCredential. |
 
 \* Required for the relevant parameter set only.
 
@@ -329,6 +336,7 @@ Each record is a `PSCustomObject` tagged with the TypeName `TeamsPrivateChannelC
 | `MembershipType` | `Standard`, `Private`, or `Shared` |
 | `IsPrivateChannel` | `$true` for private channels |
 | `SharePointSiteUrl` | Dedicated SharePoint site URL (private channels only) — eDiscovery file location |
+| `ParentTeamSharePointUrl` | Parent team SharePoint URL — Graph-resolved (`[Graph-resolved]`) or constructed from `GroupMailbox` MailNickName (`[Constructed]`). Included in the CSV export and used by the dashboard Hold Summary tab. |
 | `UserRole` | `Owner` or `Member` within this channel |
 | `MC1134737_Status` | Compliance status — see values below |
 | `ComplianceTarget` | Plain-English eDiscovery data source to add to the case |
@@ -375,7 +383,8 @@ Every run writes a timestamped log file to `-LoggingDirectory` (default: `$env:T
 | Default | Per-user `Results for:` line during scan, then per-user MC1134737 gap report sections and one summary line per UPN in the `end` block |
 | `-MediumDetails` | All of the above, plus a consolidated six-column table (`UserPrincipalName`, `TeamName`, `GroupMailbox`, `ChannelName`, `MC1134737_Status`, `ComplianceTarget`) printed after the summary lines |
 | `-FullDetails` | All of the above, plus all record properties printed as `Format-List` after the summary lines |
-| `-HoldSummary` | All of the above, plus a per-custodian Purview hold location checklist (Exchange mailbox, OneDrive, private channel Exchange and SharePoint locations, ownerless warnings, manual-action note for parent team SharePoint) |
+| `-HoldSummary` | All of the above, plus a per-custodian Purview hold location checklist (Exchange mailbox, OneDrive, private channel Exchange + SharePoint, standard/shared channel Exchange, and parent team SharePoint URLs) |
+| `-ResolveSharePointUrls` | When combined with `-HoldSummary`, replaces `[Constructed]` parent team SharePoint URLs with Graph-resolved `[Graph-resolved]` URLs via `GET /groups/{id}/sites/root`. Requires `Sites.Read.All`. |
 
 ## Get-Help
 
@@ -410,9 +419,12 @@ To assign only the Teams Administrator role in the Microsoft 365 admin center:
 
 ## Dashboard
 
-A Python/Streamlit web dashboard is included in the `dashboard/` folder. It lets you enter custodian UPNs in a browser, runs the PowerShell module, and displays the results in four tabs: **Console Output**, **Records Table**, **Charts**, and **Hold Summary**.
+A Python/Streamlit web dashboard is included in the `dashboard/` folder. Enter custodian UPNs in a browser, run the PowerShell module, and review results across five tabs. Settings are persisted to `dashboard_settings.json` (excluded from git) so preferences survive restarts.
 
 ### Prerequisites
+
+- Python 3.11 or later
+- PowerShell 7.1 or later (available as `pwsh` on PATH)
 
 ### Install and run
 
@@ -428,21 +440,29 @@ Streamlit opens the dashboard automatically at `http://localhost:8501`.
 
 | Tab | What it shows |
 | --- | --- |
-| **Console Output** | Full live-streaming output from the PowerShell run |
-| **Records Table** | Filterable table of all records; download filtered CSV |
-| **Charts** | KPI metrics, MC1134737 status pie chart, per-custodian bar chart, ownerless channel callout |
-| **Hold Summary** | Raw hold summary block from the console output + structured per-custodian location checklist (Exchange mailbox, OneDrive, private channel group mailboxes and SharePoint sites) |
+| **🔍 Gap Analysis** | KPI metrics, MC1134737 status pie chart, per-custodian bar chart, ownerless channel critical callout |
+| **📊 Records Table** | Filterable table of all records including `ParentTeamSharePointUrl`; download filtered CSV |
+| **🏛️ Hold Summary** | Per-custodian Purview hold checklist — Exchange mailbox, OneDrive, private/standard channel Exchange + SharePoint locations |
+| **🖥️ Raw Log** | Full timestamped log file from the PowerShell run; download button |
+| **🚨 Error Log** | All errors and warnings captured during the scan; download button |
 
 ### Sidebar options
 
 - **Module manifest path** — auto-detected relative to `dashboard/app.py`; change if running from a different location
 - **Log / CSV output directory** — where the module writes its timestamped log and CSV files
 - **Authentication method** — Interactive (browser/MFA), Device Code, PSCredential, Service Principal, or Managed Identity; relevant credential fields appear automatically
-- **Switches** — `-HoldSummary`, `-MediumDetails`, `-FullDetails`, `-ExportToCsv` (on by default — required for table and chart tabs), `-StayConnected`
+- **Switches** — `-HoldSummary`, `-ResolveSharePointUrls` (Graph-resolved parent team SharePoint URLs — requires `Sites.Read.All`), `-MediumDetails`, `-FullDetails`, `-StayConnected`
+- **Session panel** — shows Teams session status (🟢 active / ⚫ none); **Disconnect Teams** and **Kill session** buttons
+
+> **Note:** `-ExportToCsv` is always enabled by the dashboard — the CSV is required for the Records Table, Gap Analysis, and Hold Summary tabs.
+
+### Session reuse
+
+The dashboard keeps a single persistent `pwsh -NoExit` process alive for the lifetime of the browser session. On the second and subsequent scans the Teams session is reused automatically — no re-authentication prompt. The session status indicator in the sidebar shows whether a live Teams session is active.
 
 ### Note on authentication
 
-For Interactive and Device Code flows, the Microsoft Teams authentication prompt opens in a **separate browser window**. The dashboard remains responsive while waiting. For Device Code, the code appears in the **Console Output** tab.
+For Interactive and Device Code flows, the Microsoft Teams authentication prompt opens in a **separate browser window**. The dashboard remains responsive while waiting. For Device Code, the code appears in the **Raw Log** tab.
 
 ## License
 

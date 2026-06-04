@@ -15,6 +15,9 @@ Logging.txt
 Logging_*.txt
 ComplianceMap_*.csv
 
+# Dashboard — user-specific settings (contains paths and usernames)
+dashboard/dashboard_settings.json
+
 # VS Code
 .vscode/
 

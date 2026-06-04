@@ -114,7 +114,11 @@ function Get-TeamsPrivateChannelComplianceMap {
           - Private channel Exchange locations (group mailboxes, deduplicated per team).
           - Private channel SharePoint site URLs (one per channel).
           - A CRITICAL warning for OwnerlessPending channels still on the old model.
-          - A manual-action note for parent team SharePoint sites (standard channels).
+          - Standard and Shared channel group mailboxes (deduplicated per team) —
+            add as non-custodial data sources to capture all standard channel messages.
+          - Parent team SharePoint URLs (constructed from group mailbox MailNickName
+            per Microsoft eDiscovery guidance) — add as non-custodial data sources.
+            Labelled [Constructed] — verify if the site was manually renamed.
         OneDrive URLs are constructed from the UPN and may need verification for
         tenants that use custom SharePoint domain names.
 
@@ -233,7 +237,12 @@ function Get-TeamsPrivateChannelComplianceMap {
         Record fields:
           UserPrincipalName, TeamName, GroupId, GroupMailbox, ChannelName,
           ChannelThreadId, MembershipType, IsPrivateChannel, SharePointSiteUrl,
-          UserRole, MC1134737_Status, ComplianceTarget.
+          ParentTeamSharePointUrl, UserRole, MC1134737_Status, ComplianceTarget.
+
+        ParentTeamSharePointUrl: Graph-resolved (labelled [Graph-resolved]) when
+          -ResolveSharePointUrls is specified and the Graph call succeeds; otherwise
+          constructed from GroupMailbox MailNickName (labelled [Constructed]).
+          Written to the CSV export and used by the dashboard Hold Summary tab.
 
     .NOTES
         Alias: GTPCCM
@@ -247,7 +256,14 @@ function Get-TeamsPrivateChannelComplianceMap {
           (default)        Per-user gap report + summary lines only
           -MediumDetails   Adds a consolidated six-column table after the summaries
           -FullDetails     Adds a full Format-List of every property after the summaries
-          -HoldSummary     Prints a per-custodian Purview eDiscovery hold location checklist
+          -ResolveSharePointUrls  Queries Microsoft Graph for authoritative parent team
+                                   SharePoint URLs. Resolved per team in the process block
+                                   and stored in ParentTeamSharePointUrl on every record.
+                                   Graph is called once per unique GroupId and cached.
+          -ResolveSharePointUrls  Queries Microsoft Graph for authoritative parent team
+                                   SharePoint URLs. Resolved per team in the process block
+                                   and stored in ParentTeamSharePointUrl on every record.
+                                   Graph is called once per unique GroupId and cached.
 
         MC1134737_Status values:
           NotApplicable    Standard/Shared channels — not affected by migration
@@ -287,6 +303,9 @@ function Get-TeamsPrivateChannelComplianceMap {
 
         [Parameter()]
         [switch]$HoldSummary,
+
+        [Parameter()]
+        [switch]$ResolveSharePointUrls,
 
         # ── TenantId ──────────────────────────────────────────────────────────
         [Parameter(ParameterSetName = 'Interactive',      Mandatory = $false)]
@@ -392,13 +411,24 @@ function Get-TeamsPrivateChannelComplianceMap {
 
         # Check for an existing session — skip reconnect if -StayConnected and already connected.
         # Get-CsTenant is a fast single-object call; it throws when no active session exists.
+        # NOTE: session reuse only works if the PREVIOUS run also used -StayConnected (so it
+        # did not disconnect). If the previous run did not use -StayConnected, a new connection
+        # is required regardless.
         $alreadyConnected = $false
         if ($StayConnected) {
             try {
                 $null = Get-CsTenant -ErrorAction Stop
                 $alreadyConnected = $true
+                Write-ToLogFile -StringObject 'Active Teams session detected — skipping Connect-MicrosoftTeams (-StayConnected).' `
+                    -LogFile $logFile -ForegroundColor Cyan
             }
-            catch { $alreadyConnected = $false }
+            catch {
+                $alreadyConnected = $false
+                Write-ToLogFile -StringObject 'No active Teams session found. A new connection will be established.' `
+                    -LogFile $logFile -ForegroundColor DarkGray
+                Write-ToLogFile -StringObject 'Tip: use -StayConnected on every run in a chain to avoid repeated sign-in prompts.' `
+                    -LogFile $logFile -ForegroundColor DarkGray
+            }
         }
 
         if ($alreadyConnected) {
@@ -461,6 +491,100 @@ function Get-TeamsPrivateChannelComplianceMap {
 
         #endregion
 
+        #region ── Microsoft Graph connection (optional — for -ResolveSharePointUrls) ──
+        # Ref: https://learn.microsoft.com/en-us/graph/api/group-list-sites
+        # Requires Sites.Read.All granted to the auth identity.
+
+        $mgGraphConnected   = $false
+        $graphTokenDirect   = $null     # used only for the AccessTokens parameter set
+
+        if ($ResolveSharePointUrls) {
+
+            if ($PSCmdlet.ParameterSetName -eq 'Credential') {
+                Write-ToLogFile -StringObject 'WARN: -ResolveSharePointUrls is not supported with PSCredential auth. Parent team SharePoint URLs will use the [Constructed] fallback.' `
+                    -LogFile $logFile -ForegroundColor Yellow
+            }
+            elseif ($PSCmdlet.ParameterSetName -eq 'AccessTokens') {
+                # AccessTokens[0] is the MS Graph token — use Invoke-RestMethod directly.
+                # No separate module or Connect-MgGraph call required.
+                $graphTokenDirect = $AccessTokens[0]
+                $mgGraphConnected = $true
+                Write-ToLogFile -StringObject 'Graph: using pre-acquired access token for SharePoint URL resolution.' `
+                    -LogFile $logFile -ForegroundColor Cyan
+            }
+            else {
+                # All other sets: use Microsoft.Graph.Authentication module.
+                $graphModule = 'Microsoft.Graph.Authentication'
+                $graphInstalled = Get-Module -ListAvailable -Name $graphModule |
+                                  Sort-Object Version -Descending | Select-Object -First 1
+
+                if (-not $graphInstalled) {
+                    Write-ToLogFile -StringObject "$graphModule not found. Installing from PSGallery..." `
+                        -LogFile $logFile -ForegroundColor Yellow
+                    try {
+                        Install-Module -Name $graphModule -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+                        Write-ToLogFile -StringObject "$graphModule installed." -LogFile $logFile
+                    }
+                    catch {
+                        Write-ToLogFile -StringObject "ERROR: $graphModule installation failed. $($_.Exception.Message)" `
+                            -LogFile $logFile -ForegroundColor Red
+                        Write-ToLogFile -StringObject 'Falling back to [Constructed] SharePoint URLs.' `
+                            -LogFile $logFile -ForegroundColor Yellow
+                    }
+                }
+
+                if (-not (Get-Module -Name $graphModule)) {
+                    try {
+                        Import-Module -Name $graphModule -ErrorAction Stop
+                    }
+                    catch {
+                        Write-ToLogFile -StringObject "ERROR: $graphModule import failed. $($_.Exception.Message)" `
+                            -LogFile $logFile -ForegroundColor Red
+                    }
+                }
+
+                if (Get-Module -Name $graphModule) {
+                    Write-ToLogFile -StringObject 'Connecting to Microsoft Graph for SharePoint URL resolution (Sites.Read.All)...' `
+                        -LogFile $logFile -ForegroundColor Cyan
+                    try {
+                        switch ($PSCmdlet.ParameterSetName) {
+
+                            'Interactive' {
+                                $mgParams = @{ Scopes = @('Sites.Read.All'); NoWelcome = $true }
+                                if ($TenantId)                { $mgParams['TenantId']     = $TenantId }
+                                if ($UseDeviceAuthentication) { $mgParams['UseDeviceCode'] = $true }
+                                Connect-MgGraph @mgParams -ErrorAction Stop | Out-Null
+                            }
+
+                            'ServicePrincipal' {
+                                $mgParams = @{
+                                    ClientId  = $ApplicationId
+                                    TenantId  = $TenantId
+                                    NoWelcome = $true
+                                }
+                                if ($CertificateThumbprint) { $mgParams['CertificateThumbprint'] = $CertificateThumbprint }
+                                if ($Certificate)           { $mgParams['Certificate']           = $Certificate }
+                                Connect-MgGraph @mgParams -ErrorAction Stop | Out-Null
+                            }
+
+                            'ManagedIdentity' {
+                                Connect-MgGraph -Identity -NoWelcome -ErrorAction Stop | Out-Null
+                            }
+                        }
+
+                        $mgGraphConnected = $true
+                        Write-ToLogFile -StringObject 'Graph connection established.' -LogFile $logFile -ForegroundColor Green
+                    }
+                    catch {
+                        Write-ToLogFile -StringObject "WARN: Graph connection failed. $($_.Exception.Message). Falling back to [Constructed] URLs." `
+                            -LogFile $logFile -ForegroundColor Yellow
+                    }
+                }
+            }
+        }
+
+        #endregion
+
         #region ── Resolve UPN(s) ───────────────────────────────────────────────
 
         if (-not $UserPrincipalName) {
@@ -491,6 +615,13 @@ function Get-TeamsPrivateChannelComplianceMap {
 
         Write-ToLogFile -StringObject "Investigating $($UserPrincipalName.Count) user(s): $($UserPrincipalName -join ', ')" -LogFile $logFile -ForegroundColor Cyan
 
+        #endregion
+
+        #region ── Graph SharePoint URL cache ────────────────────────────────
+        # GroupId → resolved SharePoint URL (populated during the process block).
+        # Avoids duplicate Graph calls when multiple custodians share the same team.
+        $graphSpCache = [System.Collections.Generic.Dictionary[string,string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase)
         #endregion
 
         #region ── MC1134737: Tenant private channel migration status ─────────
@@ -647,6 +778,45 @@ function Get-TeamsPrivateChannelComplianceMap {
                         if (-not $userInChannel) { continue }   # user is not a member of this private channel
                     }
 
+                    # ── Resolve parent team SharePoint URL ───────────────────
+                    # Resolved once per unique GroupId and cached in $graphSpCache.
+                    # Used as ParentTeamSharePointUrl on every record for this team.
+                    $parentSpUrl = $null
+                    if (-not $graphSpCache.TryGetValue($groupId, [ref]$parentSpUrl)) {
+                        $mailNickForSp  = ($groupMailbox -split '@')[0]
+                        $constructedSp  = "https://$tenantName.sharepoint.com/sites/$mailNickForSp"
+
+                        if ($mgGraphConnected -or $graphTokenDirect) {
+                            try {
+                                if ($graphTokenDirect) {
+                                    $spHeaders  = @{ Authorization = "Bearer $graphTokenDirect" }
+                                    $spResponse = Invoke-RestMethod `
+                                        -Uri "https://graph.microsoft.com/v1.0/groups/$groupId/sites/root" `
+                                        -Headers $spHeaders -ErrorAction Stop
+                                    $parentSpUrl = $spResponse.webUrl
+                                }
+                                else {
+                                    $spResponse = Invoke-MgGraphRequest `
+                                        -Method GET `
+                                        -Uri "https://graph.microsoft.com/v1.0/groups/$groupId/sites/root" `
+                                        -ErrorAction Stop
+                                    $parentSpUrl = $spResponse.webUrl
+                                }
+                                Write-ToLogFile -StringObject "Graph: resolved SharePoint for '$teamName': $parentSpUrl [Graph-resolved]" `
+                                    -LogFile $logFile -LogOnly
+                            }
+                            catch {
+                                $parentSpUrl = $constructedSp
+                                Write-ToLogFile -StringObject "WARN: Graph call failed for '$teamName'. Using [Constructed]: $constructedSp. $($_.Exception.Message)" `
+                                    -LogFile $logFile -ForegroundColor Yellow -LogOnly
+                            }
+                        }
+                        else {
+                            $parentSpUrl = $constructedSp
+                        }
+                        $graphSpCache[$groupId] = $parentSpUrl
+                    }
+
                     # ── Build SharePoint URL for private channels ─────────────
                     # Each private channel has its own dedicated SharePoint site.
                     # Ref: https://learn.microsoft.com/en-us/microsoftteams/private-channels#private-channel-sharepoint-sites
@@ -696,22 +866,23 @@ function Get-TeamsPrivateChannelComplianceMap {
                     }
 
                     $record = [PSCustomObject]@{
-                        UserPrincipalName = $upn
-                        TeamName          = $teamName
-                        GroupId           = $groupId
-                        GroupMailbox      = $groupMailbox       # Parent team Exchange group mailbox
-                        ChannelName       = $channelName
-                        ChannelThreadId   = $channel.Id         # Unique thread ID (19:xxx@thread.tacv2)
-                        MembershipType    = $membershipType
-                        IsPrivateChannel  = $isPrivate
-                        SharePointSiteUrl = $sharePointUrl      # Private channel's dedicated SharePoint site
-                        UserRole          = if ($isPrivate -and $channelMembers) {
-                                                ($channelMembers | Where-Object { $_.User -eq $upn }).Role
-                                            } else {
-                                                $userInTeam.Role
-                                            }
-                        MC1134737_Status  = $mc1134737Status
-                        ComplianceTarget  = $complianceTarget
+                        UserPrincipalName      = $upn
+                        TeamName               = $teamName
+                        GroupId                = $groupId
+                        GroupMailbox           = $groupMailbox       # Parent team Exchange group mailbox
+                        ChannelName            = $channelName
+                        ChannelThreadId        = $channel.Id         # Unique thread ID (19:xxx@thread.tacv2)
+                        MembershipType         = $membershipType
+                        IsPrivateChannel       = $isPrivate
+                        SharePointSiteUrl      = $sharePointUrl      # Private channel's dedicated SharePoint site
+                        ParentTeamSharePointUrl = $parentSpUrl        # Parent team SharePoint (Graph-resolved or Constructed)
+                        UserRole               = if ($isPrivate -and $channelMembers) {
+                                                     ($channelMembers | Where-Object { $_.User -eq $upn }).Role
+                                                 } else {
+                                                     $userInTeam.Role
+                                                 }
+                        MC1134737_Status       = $mc1134737Status
+                        ComplianceTarget       = $complianceTarget
                     }
 
                     $record.PSObject.TypeNames.Insert(0, 'TeamsPrivateChannelComplianceMap.Record')
@@ -930,14 +1101,47 @@ function Get-TeamsPrivateChannelComplianceMap {
                     Write-ToLogFile -StringObject '  No private channel memberships found — no additional private channel locations required.' -LogFile $logFile -ForegroundColor DarkGreen
                 }
 
-                $teamsWithStdChannels = $upnRecords | Where-Object { -not $_.IsPrivateChannel } |
-                                        Select-Object -ExpandProperty TeamName -Unique
+                # ── Standard / Shared channel group mailboxes ─────────────────
+                # These group mailboxes hold all standard and shared channel messages
+                # via the TeamsMessagesData substrate folder. Adding them as
+                # non-custodial Exchange data sources is required for complete coverage.
+                $stdChannelRecords = $upnRecords | Where-Object { -not $_.IsPrivateChannel }
+                $addedStdMailboxes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                $stdExchangeLines  = [System.Collections.Generic.List[string]]::new()
+                foreach ($ch in $stdChannelRecords) {
+                    if ($addedStdMailboxes.Add($ch.GroupMailbox)) {
+                        $stdExchangeLines.Add("    $($ch.GroupMailbox)  ($($ch.TeamName))")
+                    }
+                }
+
+                if ($stdExchangeLines.Count -gt 0) {
+                    Write-ToLogFile -StringObject '' -LogFile $logFile
+                    Write-ToLogFile -StringObject '  STANDARD/SHARED CHANNEL — EXCHANGE LOCATIONS (add as non-custodial data sources):' -LogFile $logFile -ForegroundColor Green
+                    Write-ToLogFile -StringObject '  (Captures all standard and shared channel messages via TeamsMessagesData substrate.)' -LogFile $logFile -ForegroundColor DarkGray
+                    foreach ($line in $stdExchangeLines) { Write-ToLogFile -StringObject $line -LogFile $logFile }
+                }
+
+                $teamsWithStdChannels = $stdChannelRecords | Select-Object -ExpandProperty TeamName -Unique
                 if ($teamsWithStdChannels) {
                     Write-ToLogFile -StringObject '' -LogFile $logFile
-                    Write-ToLogFile -StringObject '  ADD MANUALLY — parent team SharePoint site (standard channel file storage):' -LogFile $logFile -ForegroundColor Yellow
-                    Write-ToLogFile -StringObject '  (URLs not resolved by this function — look up each team in the Teams admin center.)' -LogFile $logFile -ForegroundColor DarkGray
-                    foreach ($tName in $teamsWithStdChannels) {
-                        Write-ToLogFile -StringObject "    Team: $tName" -LogFile $logFile
+                    Write-ToLogFile -StringObject '  PARENT TEAM SHAREPOINT — FILE STORAGE (add as non-custodial data sources):' -LogFile $logFile -ForegroundColor Green
+                    Write-ToLogFile -StringObject '  (Ref: https://learn.microsoft.com/en-us/purview/ediscovery-teams-investigation)' -LogFile $logFile -ForegroundColor DarkGray
+
+                    $seenTeamSP = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                    foreach ($ch in $stdChannelRecords) {
+                        if (-not $seenTeamSP.Add($ch.GroupId)) { continue }
+
+                        $spUrl = $ch.ParentTeamSharePointUrl
+                        $isGraphResolved = $graphSpCache.ContainsKey($ch.GroupId) -and
+                                           ($mgGraphConnected -or $graphTokenDirect)
+                        $label = if ($isGraphResolved) { '[Graph-resolved]' } else { '[Constructed — verify if site was renamed]' }
+
+                        Write-ToLogFile -StringObject "    $spUrl  ($($ch.TeamName)) $label" -LogFile $logFile
+
+                        if (-not $isGraphResolved) {
+                            Write-ToLogFile -StringObject '    Tip: add -ResolveSharePointUrls to obtain authoritative URLs via Microsoft Graph.' `
+                                -LogFile $logFile -ForegroundColor DarkGray
+                        }
                     }
                 }
             }
