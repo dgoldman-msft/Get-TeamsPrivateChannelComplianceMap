@@ -1,0 +1,25 @@
+﻿# PowerShell artifacts
+*.ps1xml
+*.nupkg
+
+# Test results
+TestResults/
+coverage.xml
+
+# Build output
+Release/
+Output/
+
+# Logs
+*.log
+Logging.txt
+Logging_*.txt
+ComplianceMap_*.csv
+
+# VS Code
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
