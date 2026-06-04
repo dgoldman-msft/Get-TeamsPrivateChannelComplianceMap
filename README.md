@@ -408,6 +408,42 @@ To assign only the Teams Administrator role in the Microsoft 365 admin center:
 3. Go to **Manage roles > Admin center access**
 4. Assign **Teams Administrator**
 
+## Dashboard
+
+A Python/Streamlit web dashboard is included in the `dashboard/` folder. It lets you enter custodian UPNs in a browser, runs the PowerShell module, and displays the results in four tabs: **Console Output**, **Records Table**, **Charts**, and **Hold Summary**.
+
+### Prerequisites
+
+### Install and run
+
+```powershell
+cd dashboard
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Streamlit opens the dashboard automatically at `http://localhost:8501`.
+
+### Features
+
+| Tab | What it shows |
+| --- | --- |
+| **Console Output** | Full live-streaming output from the PowerShell run |
+| **Records Table** | Filterable table of all records; download filtered CSV |
+| **Charts** | KPI metrics, MC1134737 status pie chart, per-custodian bar chart, ownerless channel callout |
+| **Hold Summary** | Raw hold summary block from the console output + structured per-custodian location checklist (Exchange mailbox, OneDrive, private channel group mailboxes and SharePoint sites) |
+
+### Sidebar options
+
+- **Module manifest path** — auto-detected relative to `dashboard/app.py`; change if running from a different location
+- **Log / CSV output directory** — where the module writes its timestamped log and CSV files
+- **Authentication method** — Interactive (browser/MFA), Device Code, PSCredential, Service Principal, or Managed Identity; relevant credential fields appear automatically
+- **Switches** — `-HoldSummary`, `-MediumDetails`, `-FullDetails`, `-ExportToCsv` (on by default — required for table and chart tabs), `-StayConnected`
+
+### Note on authentication
+
+For Interactive and Device Code flows, the Microsoft Teams authentication prompt opens in a **separate browser window**. The dashboard remains responsive while waiting. For Device Code, the code appears in the **Console Output** tab.
+
 ## License
 
 © Dave Goldman. All rights reserved. See [LICENSE](LICENSE) for details.
