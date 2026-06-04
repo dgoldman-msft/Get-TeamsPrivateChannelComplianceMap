@@ -1,5 +1,4 @@
 ﻿# PowerShell artifacts
-*.ps1xml
 *.nupkg
 
 # Test results

@@ -1,0 +1,61 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+  <ViewDefinitions>
+
+    <!-- Default table view: 6 key compliance columns -->
+    <View>
+      <Name>Default</Name>
+      <ViewSelectedBy>
+        <TypeName>TeamsPrivateChannelComplianceMap.Record</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <AutoSize />
+        <TableHeaders>
+          <TableColumnHeader>
+            <Label>UPN</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>TeamName</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>GroupMailbox</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>ChannelName</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>MC1134737_Status</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>ComplianceTarget</Label>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <PropertyName>UserPrincipalName</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>TeamName</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>GroupMailbox</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>ChannelName</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>MC1134737_Status</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>ComplianceTarget</PropertyName>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+
+  </ViewDefinitions>
+</Configuration>
