@@ -8,5 +8,14 @@
 # Public function
 . (Join-Path $PSScriptRoot 'functions\Get-TeamsPrivateChannelComplianceMap.ps1')
 
+# Register default format view for TeamsPrivateChannelComplianceMap.Record.
+# Using Update-FormatData here (rather than FormatsToProcess in the manifest)
+# avoids the execution-policy signing requirement for ps1xml files when the
+# module is loaded from a remote or downloaded location.
+$formatFile = Join-Path $PSScriptRoot 'xml\Get-TeamsPrivateChannelComplianceMap.Format.ps1xml'
+if (Test-Path $formatFile) {
+    Update-FormatData -AppendPath $formatFile
+}
+
 # Export public API
 Export-ModuleMember -Function 'Get-TeamsPrivateChannelComplianceMap' -Alias 'GTPCCM'

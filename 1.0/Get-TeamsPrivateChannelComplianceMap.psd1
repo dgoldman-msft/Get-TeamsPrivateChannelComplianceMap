@@ -8,7 +8,7 @@
     Description       = 'Maps a Microsoft Teams custodian''s private channel memberships to eDiscovery content locations to close the compliance gap created by MC1134737.'
     PowerShellVersion = '7.1'
     RequiredModules   = @()
-    FormatsToProcess  = @('.\Get-TeamsPrivateChannelComplianceMap.Format.ps1xml')
+    FormatsToProcess  = @()
     FunctionsToExport = @('Get-TeamsPrivateChannelComplianceMap')
     CmdletsToExport   = @()
     VariablesToExport = @()
