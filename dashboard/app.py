@@ -13,6 +13,7 @@ Usage
 
 import glob
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -140,6 +141,15 @@ def _ps_quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+# Matches all ANSI/VT100 escape sequences (colours, bold, cursor movement, etc.)
+_ANSI_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from a string."""
+    return _ANSI_RE.sub('', text)
+
+
 def build_ps_command(
     upns:          list[str],
     module_path:   str,
@@ -195,7 +205,21 @@ def build_ps_command(
             params.append(f"    TenantId = {_ps_quote(tenant_id)}")
 
     param_block = "\n".join(params)
+    # Preamble:
+    #   $PSStyle.OutputRendering = 'PlainText'  — disable ANSI colour codes
+    #   [Console]::OutputEncoding / $OutputEncoding — ensure UTF-8
+    #   $Host.UI.RawUI.BufferSize.Width = 220    — prevent Format-Table wrapping
+    preamble = (
+        "$PSStyle.OutputRendering = 'PlainText'\n"
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n"
+        "$OutputEncoding = [System.Text.Encoding]::UTF8\n"
+        "try { "
+        "  $sz = $Host.UI.RawUI.BufferSize; $sz.Width = 220; "
+        "  $Host.UI.RawUI.BufferSize = $sz "
+        "} catch {}\n"
+    )
     return (
+        f"{preamble}"
         f"Import-Module {_ps_quote(module_path)} -Force -ErrorAction Stop\n"
         f"$params = @{{\n{param_block}\n}}\n"
         f"Get-TeamsPrivateChannelComplianceMap @params"
@@ -246,7 +270,7 @@ upns_raw = st.text_area(
     help="One UPN per line, or comma-separated.",
 )
 
-run_btn = st.button("▶  Run Compliance Scan", type="primary", use_container_width=True)
+run_btn = st.button("▶  Run Compliance Scan", type="primary", width='stretch')
 
 # ── Run the PowerShell module ─────────────────────────────────────────────────
 if run_btn:
@@ -278,7 +302,8 @@ if run_btn:
             "⏳ Connecting to Microsoft Teams — "
             "an authentication prompt may open in a separate window or browser tab…"
         )
-        out_placeholder = st.empty()
+        out_expander = st.expander("🖥️ Live PowerShell output (for administrators)", expanded=False)
+        out_placeholder = out_expander.empty()
         output_lines: list[str] = []
 
         try:
@@ -292,7 +317,7 @@ if run_btn:
             )
 
             for raw_line in proc.stdout:
-                line = raw_line.rstrip()
+                line = _strip_ansi(raw_line.rstrip())
                 output_lines.append(line)
                 out_placeholder.code(
                     "\n".join(output_lines[-60:]),   # rolling last 60 lines
@@ -326,21 +351,79 @@ if run_btn:
                 "https://aka.ms/powershell"
             )
 
-# ── Results ───────────────────────────────────────────────────────────────────
+# ── Results ─────────────────────────────────────────────────────────────────
 if st.session_state.ran:
-    tab_console, tab_table, tab_charts, tab_hold = st.tabs([
-        "📋 Console Output",
+
+    # ── Compliance Summary — always visible above the tabs ───────────────────
+    st.divider()
+    st.subheader("Compliance Summary")
+
+    df_summary = st.session_state.df
+    if df_summary is not None and not df_summary.empty:
+        private_s   = df_summary[bool_col(df_summary["IsPrivateChannel"])]
+        ownerless_s = private_s[private_s["MC1134737_Status"] == "OwnerlessPending"]
+
+        if not ownerless_s.empty:
+            st.error(
+                f"⚠️  **{len(ownerless_s)} critical gap(s) detected — immediate action required**  \n"
+                "These channels were skipped during MC1134737 migration. "
+                "Compliance copies remain in **individual member mailboxes** — "
+                "not the group mailbox. These locations are **missing** from any "
+                "Purview hold built from the custodian UPN alone."
+            )
+        else:
+            st.success("✅  No ownerless channel gaps detected for the scanned custodians.")
+
+        rows = []
+        for upn in sorted(df_summary["UserPrincipalName"].unique()):
+            udf  = df_summary[df_summary["UserPrincipalName"] == upn]
+            priv = udf[bool_col(udf["IsPrivateChannel"])]
+            n_ownerless = int((priv["MC1134737_Status"] == "OwnerlessPending").sum())
+            n_pending   = int((priv["MC1134737_Status"] == "MigrationPending").sum())
+            rows.append({
+                "Custodian":        upn,
+                "Private Channels": len(priv),
+                "Migrated":         int((priv["MC1134737_Status"] == "Migrated").sum()),
+                "⚠️ Ownerless":     n_ownerless,
+                "Pending":          n_pending,
+                "Unknown":          int((priv["MC1134737_Status"] == "Unknown").sum()),
+                "Action Required": (
+                    "🔴 Assign channel owner(s) — add all member mailboxes to hold"
+                    if n_ownerless > 0
+                    else (
+                        "🟡 Verify migration status before finalising hold"
+                        if n_pending > 0
+                        else "🟢 Add group mailbox + SharePoint locations to hold"
+                        if len(priv) > 0
+                        else "ℹ️ No private channels — standard hold applies"
+                    )
+                ),
+            })
+        if rows:
+            st.dataframe(pd.DataFrame(rows), width="stretch")
+    else:
+        st.warning(
+            "No CSV data available. "
+            "Enable **-ExportToCsv** in the sidebar and re-run."
+        )
+
+    st.divider()
+
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    tab_charts, tab_table, tab_hold, tab_console = st.tabs([
+        "🔍 Gap Analysis",
         "📊 Records Table",
-        "📈 Charts",
         "🏛️ Hold Summary",
+        "🖥️ Raw Log",
     ])
 
-    # ── Console Output ────────────────────────────────────────────────────────
+    # ── Raw Log (admin use) ───────────────────────────────────────────────────
     with tab_console:
-        if st.session_state.output_lines:
-            st.code("\n".join(st.session_state.output_lines), language="text")
-        else:
-            st.info("No console output captured.")
+        with st.expander("🖥️ Raw PowerShell output (for administrators)", expanded=True):
+            if st.session_state.output_lines:
+                st.code("\n".join(st.session_state.output_lines), language="text")
+            else:
+                st.info("No console output captured.")
 
     # ── Records Table ─────────────────────────────────────────────────────────
     with tab_table:
@@ -375,7 +458,7 @@ if st.session_state.ran:
                     "GroupMailbox", "SharePointSiteUrl", "ComplianceTarget",
                 ] if c in fdf.columns
             ]
-            st.dataframe(fdf[display_cols], use_container_width=True)
+            st.dataframe(fdf[display_cols], width='stretch')
             st.caption(f"{len(fdf)} of {len(df)} records shown")
 
             st.download_button(
@@ -429,7 +512,7 @@ if st.session_state.ran:
                         hole=0.4,
                     )
                     fig_pie.update_layout(margin=dict(t=20, b=20))
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_pie, width='stretch')
 
                 with col_r:
                     st.subheader("Private channels per custodian")
@@ -453,7 +536,7 @@ if st.session_state.ran:
                         legend_title_text="Status",
                         xaxis_title="Custodian",
                     )
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                    st.plotly_chart(fig_bar, width='stretch')
 
                 # Critical gap callout
                 ownerless_df = private[private["MC1134737_Status"] == "OwnerlessPending"]
@@ -471,7 +554,7 @@ if st.session_state.ran:
                             "ChannelThreadId", "GroupId",
                         ] if c in ownerless_df.columns
                     ]
-                    st.dataframe(ownerless_df[oc], use_container_width=True)
+                    st.dataframe(ownerless_df[oc], width='stretch')
         else:
             st.info("No data available. Run a scan first.")
 

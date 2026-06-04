@@ -419,7 +419,7 @@ A Python/Streamlit web dashboard is included in the `dashboard/` folder. It lets
 ```powershell
 cd dashboard
 pip install -r requirements.txt
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
 Streamlit opens the dashboard automatically at `http://localhost:8501`.
