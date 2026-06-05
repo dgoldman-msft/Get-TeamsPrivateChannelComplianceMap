@@ -109,7 +109,6 @@ Get-TeamsPrivateChannelComplianceMap
     [-TenantId <String>]
     [-UseDeviceAuthentication]
     [-StayConnected]
-    [-ExportToCsv]
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
@@ -122,7 +121,6 @@ Get-TeamsPrivateChannelComplianceMap
     [-LoggingDirectory <String>]
     [-TenantId <String>]
     [-StayConnected]
-    [-ExportToCsv]
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
@@ -136,7 +134,6 @@ Get-TeamsPrivateChannelComplianceMap
     [-UserPrincipalName <String[]>]
     [-LoggingDirectory <String>]
     [-StayConnected]
-    [-ExportToCsv]
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
@@ -149,7 +146,6 @@ Get-TeamsPrivateChannelComplianceMap
     [-LoggingDirectory <String>]
     [-TenantId <String>]
     [-StayConnected]
-    [-ExportToCsv]
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
@@ -161,7 +157,6 @@ Get-TeamsPrivateChannelComplianceMap
     [-UserPrincipalName <String[]>]
     [-LoggingDirectory <String>]
     [-StayConnected]
-    [-ExportToCsv]
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
@@ -184,7 +179,6 @@ Get-TeamsPrivateChannelComplianceMap
 | `-AccessTokens` | String[2] | Yes* | — | Two-element array: `[0]` MS Graph token, `[1]` Skype/Teams Admin API token (AccessTokens set). |
 | `-ManagedIdentity` | Switch | Yes* | — | Connect via Azure managed service identity (ManagedIdentity set). |
 | `-StayConnected` | Switch | No | `$false` | Keep the Teams session open after the function completes. If a session is already active (detected via `Get-CsTenant`), reconnection is skipped entirely. |
-| `-ExportToCsv` | Switch | No | `$false` | Export all collected records to a timestamped CSV file in `-LoggingDirectory`. |
 | `-MediumDetails` | Switch | No | `$false` | After the per-user gap reports, print a consolidated six-column table for all UPNs. |
 | `-FullDetails` | Switch | No | `$false` | After the per-user gap reports, print all properties as `Format-List` for all UPNs. |
 | `-HoldSummary` | Switch | No | `$false` | After the gap reports, print a per-custodian Purview eDiscovery hold location checklist. |
@@ -272,9 +266,7 @@ Get-TeamsPrivateChannelComplianceMap -UserPrincipalName jdoe@contoso.com `
 
 ### 11. Export to CSV
 
-```powershell
-Get-TeamsPrivateChannelComplianceMap -UserPrincipalName jdoe@contoso.com -ExportToCsv
-```
+A timestamped `ComplianceMap_yyyyMMdd_HHmmss.csv` is automatically written to `-LoggingDirectory` on every run — no switch required.
 
 ### 12. Stay connected across multiple runs
 
@@ -317,7 +309,7 @@ After the MC1134737 gap report, prints a consolidated hold location checklist fo
 - **PRIVATE CHANNEL — SHAREPOINT** — dedicated SharePoint site URL for each private channel
 - **ADD MANUALLY** — parent team SharePoint sites for standard channel file storage (URLs not resolved by this function)
 
-Can be combined with `-ExportToCsv` or `-StayConnected`.
+Can be combined with `-StayConnected`.
 
 ## Output
 
@@ -374,7 +366,7 @@ Every run writes a timestamped log file to `-LoggingDirectory` (default: `$env:T
 - Each collected record is written to the log with one property per line.
 - A separator line marks the start and end of every run.
 - The full log file path is printed to the console in Cyan at the end of each run.
-- When `-ExportToCsv` is specified, a matching `ComplianceMap_yyyyMMdd_HHmmss.csv` is written to the same directory.
+- A matching `ComplianceMap_yyyyMMdd_HHmmss.csv` is always written to the same directory.
 
 ## Console output
 
@@ -454,7 +446,7 @@ Streamlit opens the dashboard automatically at `http://localhost:8501`.
 - **Switches** — `-HoldSummary`, `-ResolveSharePointUrls` (Graph-resolved parent team SharePoint URLs — requires `Sites.Read.All`), `-MediumDetails`, `-FullDetails`, `-StayConnected`
 - **Session panel** — shows Teams session status (🟢 active / ⚫ none); **Disconnect Teams** and **Kill session** buttons
 
-> **Note:** `-ExportToCsv` is always enabled by the dashboard — the CSV is required for the Records Table, Gap Analysis, and Hold Summary tabs.
+> **Note:** A CSV is always written automatically on every run — no switch is required. The CSV is required for the Records Table, Gap Analysis, and Hold Summary tabs.
 
 ### Session reuse
 

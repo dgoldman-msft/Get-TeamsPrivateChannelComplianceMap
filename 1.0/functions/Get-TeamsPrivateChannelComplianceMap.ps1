@@ -122,10 +122,6 @@ function Get-TeamsPrivateChannelComplianceMap {
         OneDrive URLs are constructed from the UPN and may need verification for
         tenants that use custom SharePoint domain names.
 
-    .PARAMETER ExportToCsv
-        When specified, exports all collected records to a timestamped CSV file
-        in -LoggingDirectory named ComplianceMap_yyyyMMdd_HHmmss.csv.
-
     .EXAMPLE
         C:\PS> Get-TeamsPrivateChannelComplianceMap -UserPrincipalName jdoe@contoso.com
 
@@ -199,12 +195,6 @@ function Get-TeamsPrivateChannelComplianceMap {
         Managed identity authentication with a custom log directory.
 
     .EXAMPLE
-        C:\PS> Get-TeamsPrivateChannelComplianceMap -UserPrincipalName jdoe@contoso.com `
-            -ExportToCsv
-
-        Exports the full result set to a CSV file for legal review.
-
-    .EXAMPLE
         C:\PS> GTPCCM -UserPrincipalName jdoe@contoso.com
 
         Uses the GTPCCM alias.
@@ -233,7 +223,7 @@ function Get-TeamsPrivateChannelComplianceMap {
     .OUTPUTS
         None (display only).
         Console output is controlled by the -MediumDetails, -FullDetails, and -HoldSummary switches.
-        Use -ExportToCsv to capture all records to a CSV file.
+        A timestamped CSV (ComplianceMap_yyyyMMdd_HHmmss.csv) is always written to -LoggingDirectory.
         Record fields:
           UserPrincipalName, TeamName, GroupId, GroupMailbox, ChannelName,
           ChannelThreadId, MembershipType, IsPrivateChannel, SharePointSiteUrl,
@@ -291,9 +281,6 @@ function Get-TeamsPrivateChannelComplianceMap {
 
         [Parameter()]
         [switch]$StayConnected,
-
-        [Parameter()]
-        [switch]$ExportToCsv,
 
         [Parameter()]
         [switch]$FullDetails,
@@ -938,21 +925,19 @@ function Get-TeamsPrivateChannelComplianceMap {
 
         #region ── CSV export ─────────────────────────────────────────────────
 
-        if ($ExportToCsv) {
-            if ($allResults -and $allResults.Count -gt 0) {
-                $csvPath = Join-Path $LoggingDirectory "ComplianceMap_$runStamp.csv"
-                try {
-                    $allResults | Export-Csv -Path $csvPath -NoTypeInformation -Encoding utf8 -ErrorAction Stop
-                    Write-ToLogFile -StringObject "CSV exported to: $csvPath" -LogFile $logFile -ForegroundColor Green
-                }
-                catch {
-                    Write-ToLogFile -StringObject "ERROR: CSV export failed: $($_.Exception.Message)" `
-                        -LogFile $logFile -ForegroundColor Red
-                }
+        if ($allResults -and $allResults.Count -gt 0) {
+            $csvPath = Join-Path $LoggingDirectory "ComplianceMap_$runStamp.csv"
+            try {
+                $allResults | Export-Csv -Path $csvPath -NoTypeInformation -Encoding utf8 -ErrorAction Stop
+                Write-ToLogFile -StringObject "CSV exported to: $csvPath" -LogFile $logFile -ForegroundColor Green
             }
-            else {
-                Write-ToLogFile -StringObject 'No records to export — skipping CSV export.' -LogFile $logFile -ForegroundColor Yellow
+            catch {
+                Write-ToLogFile -StringObject "ERROR: CSV export failed: $($_.Exception.Message)" `
+                    -LogFile $logFile -ForegroundColor Red
             }
+        }
+        else {
+            Write-ToLogFile -StringObject 'No records to export — skipping CSV export.' -LogFile $logFile -ForegroundColor Yellow
         }
 
         #endregion

@@ -22,7 +22,6 @@ Get-TeamsPrivateChannelComplianceMap
     [-TenantId <String>]
     [-UseDeviceAuthentication]
     [-StayConnected]
-    [-ExportToCsv]
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
@@ -39,7 +38,6 @@ Get-TeamsPrivateChannelComplianceMap
     [-LoggingDirectory <String>]
     [-TenantId <String>]
     [-StayConnected]
-    [-ExportToCsv]
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
@@ -57,7 +55,6 @@ Get-TeamsPrivateChannelComplianceMap
     [-UserPrincipalName <String[]>]
     [-LoggingDirectory <String>]
     [-StayConnected]
-    [-ExportToCsv]
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
@@ -74,7 +71,6 @@ Get-TeamsPrivateChannelComplianceMap
     [-LoggingDirectory <String>]
     [-TenantId <String>]
     [-StayConnected]
-    [-ExportToCsv]
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
@@ -90,7 +86,6 @@ Get-TeamsPrivateChannelComplianceMap
     [-UserPrincipalName <String[]>]
     [-LoggingDirectory <String>]
     [-StayConnected]
-    [-ExportToCsv]
     [-MediumDetails]
     [-FullDetails]
     [-HoldSummary]
@@ -290,15 +285,6 @@ When specified together with `-HoldSummary`, queries the Microsoft Graph API (`G
 | Required | No |
 | Requires | `-HoldSummary`; `Sites.Read.All` permission |
 
-### -ExportToCsv
-
-When specified, all collected records are exported to a timestamped CSV file in `-LoggingDirectory` named `ComplianceMap_yyyyMMdd_HHmmss.csv`.
-
-| Attribute | Value |
-| --- | --- |
-| Type | `Switch` |
-| Required | No |
-
 ### -MediumDetails
 
 When specified, a consolidated six-column table is printed after the per-user gap reports and summary lines: `UserPrincipalName`, `TeamName`, `GroupMailbox`, `ChannelName`, `MC1134737_Status`, `ComplianceTarget`. Covers all UPNs processed in the run. Cannot be combined with `-FullDetails`.
@@ -414,13 +400,9 @@ Get-TeamsPrivateChannelComplianceMap -UserPrincipalName jdoe@contoso.com `
     -ManagedIdentity -LoggingDirectory 'D:\ComplianceLogs'
 ```
 
-### Example 11 — Export to CSV
+### Example 11 — Stay connected across multiple runs
 
-```powershell
-Get-TeamsPrivateChannelComplianceMap -UserPrincipalName jdoe@contoso.com -ExportToCsv
-```
-
-### Example 12 — Stay connected across multiple runs
+> **Note:** Example numbers shifted — Example 11 (Export to CSV) has been removed. CSV is now always written automatically to `-LoggingDirectory`.
 
 ```powershell
 # First run — authenticates and leaves the session open
@@ -464,7 +446,7 @@ After the MC1134737 gap report, prints a consolidated hold location checklist fo
 
 ## OUTPUTS
 
-**None (display only).** Console output is controlled by `-MediumDetails`, `-FullDetails`, and `-HoldSummary`. Use `-ExportToCsv` to capture all records to a CSV file.
+**None (display only).** Console output is controlled by `-MediumDetails`, `-FullDetails`, and `-HoldSummary`. A timestamped CSV (`ComplianceMap_yyyyMMdd_HHmmss.csv`) is always written to `-LoggingDirectory` on every run.
 
 Internally the function builds a collection of `PSCustomObject` records tagged with the TypeName `TeamsPrivateChannelComplianceMap.Record`. Each record contains the following fields:
 
@@ -506,7 +488,7 @@ Internally the function builds a collection of `PSCustomObject` records tagged w
 - Each invocation creates a separate timestamped log file in `-LoggingDirectory`.
 - Session reuse: when `-StayConnected` is specified and `Get-CsTenant` succeeds, `Connect-MicrosoftTeams` is skipped entirely.
 - `-MediumDetails` and `-FullDetails` are mutually exclusive; `-FullDetails` takes precedence if both are supplied.
-- `-HoldSummary` can be combined with any other switch (`-MediumDetails`, `-FullDetails`, `-ExportToCsv`, `-StayConnected`, `-ResolveSharePointUrls`).
+- `-HoldSummary` can be combined with any other switch (`-MediumDetails`, `-FullDetails`, `-StayConnected`, `-ResolveSharePointUrls`).
 - `-ResolveSharePointUrls` requires `-HoldSummary` and `Sites.Read.All` permission. Not supported with `PSCredential` auth. Falls back to constructed URL per team on Graph call failure.
 
 ### eDiscovery hold coverage

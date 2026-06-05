@@ -190,7 +190,6 @@ def build_ps_command(
     hold_summary:       bool,
     medium_details:     bool,
     full_details:       bool,
-    export_csv:         bool,
     stay_connected:     bool,
     resolve_sharepoint: bool,
     force_stay_connected: bool = False,
@@ -202,7 +201,6 @@ def build_ps_command(
         f"    UserPrincipalName = @({upn_array})",
         f"    LoggingDirectory  = {_ps_quote(log_dir)}",
     ]
-    if export_csv:                          params.append("    ExportToCsv            = $true")
     if hold_summary:                        params.append("    HoldSummary            = $true")
     if resolve_sharepoint:                  params.append("    ResolveSharePointUrls  = $true")
     if medium_details:                      params.append("    MediumDetails          = $true")
@@ -377,8 +375,6 @@ with st.sidebar:
         "-StayConnected", value=_s["opt_stay_connected"],
         help="Keep the Teams session open after the run",
     )
-    opt_export_csv = True  # always on — dashboard requires the CSV
-
     # Persist any changes back to disk immediately
     _current = {
         "module_path":       module_path,
@@ -469,7 +465,7 @@ if run_btn:
             upns, module_path, log_dir, auth_method, tenant_id,
             cred_user, cred_pass, app_id, cert_thumb,
             opt_hold_summary, opt_medium_details, opt_full_details,
-            opt_export_csv, opt_stay_connected, opt_resolve_sp,
+            opt_stay_connected, opt_resolve_sp,
             force_stay_connected=True,  # always keep session alive in persistent proc
         )
 
@@ -754,8 +750,7 @@ if st.session_state.ran:
             )
         else:
             st.info(
-                "No CSV data available. "
-                "Ensure **-ExportToCsv** is enabled in the sidebar and re-run."
+                "No CSV data available. Run a scan first."
             )
 
     # ── Charts ────────────────────────────────────────────────────────────────

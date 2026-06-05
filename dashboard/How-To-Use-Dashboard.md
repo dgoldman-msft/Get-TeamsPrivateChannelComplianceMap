@@ -77,7 +77,7 @@ For Interactive and Device Code, entering a **Tenant ID or domain** (e.g. `conto
 | **-FullDetails** | Off | Adds a full property list to the Raw Log output |
 | **-StayConnected** | Off | Keeps the Teams session open after the scan (the dashboard manages this automatically via the persistent process — this switch controls whether the module itself disconnects) |
 
-> **Note:** `-ExportToCsv` is always enabled by the dashboard and does not appear as a checkbox. The CSV is required for the Records Table, Gap Analysis, and Hold Summary tabs.
+> **Note:** A CSV is always written automatically on every run — no switch is required. The CSV is required for the Records Table, Gap Analysis, and Hold Summary tabs.
 
 ---
 

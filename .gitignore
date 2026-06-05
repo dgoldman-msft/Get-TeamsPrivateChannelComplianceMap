@@ -10,6 +10,7 @@ Release/
 Output/
 
 # Logs
+logs/
 *.log
 Logging.txt
 Logging_*.txt
